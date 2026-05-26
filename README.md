@@ -1,12 +1,16 @@
 # Quran Semantic Explorer
 
-A local desktop application for exploring the English Quran through meaning rather than keyword search.
+A local desktop application for exploring the Sahih International English translation through meaning rather than keyword search.
 
-Three capabilities:
+---
 
-- **Semantic search** — type a query in natural English and retrieve the most relevant ayahs across all 6,236 verses.
-- **UMAP map** — every ayah as a 2D point, coloured by revelation place, surah, or juz. Click any point to read it in context.
-- **Cross-reference** — given any ayah, surface its ten closest semantic neighbours.
+## Capabilities
+
+**Search** — type a query in natural English and retrieve the most relevant ayahs across all 6,236 verses. Click any result to read it in context with surrounding ayahs.
+
+**Map** — every ayah as a 2D point on a UMAP scatter plot. Colour by revelation place, surah, juz, or auto-detected semantic neighbourhood. Zoom and pan with the toolbar. Draw a freehand lasso to select a region — the reading pane lists every ayah inside the boundary. Click any point to open it.
+
+**Cross-reference** — enter any ayah reference (e.g. `2:255`) to surface its ten closest semantic neighbours with similarity scores. Accessible from the reading pane's "Find Similar" button.
 
 All computation runs locally. No internet connection is required after the initial data download.
 
@@ -16,7 +20,6 @@ All computation runs locally. No internet connection is required after the initi
 
 - Python 3.11 or later
 - ~1 GB disk space (model weights + ChromaDB)
-- ~2 minutes for the first embedding run; subsequent starts are instant
 
 ---
 
@@ -28,48 +31,67 @@ pip install -r requirements.txt
 
 ---
 
-## Setup (run once)
+## Quick start
 
-**Step 1 — Download the Sahih International translation:**
+The translation, tafsir, and training pairs are already included in the repository. To get a working app in two commands:
 
+```bash
+python -m src.embed
+python -m src.app
+```
+
+`embed.py` downloads `all-MiniLM-L6-v2` (~90 MB) and embeds all 6,236 ayahs into a local ChromaDB collection. The UMAP projection is built the first time you open the Map tab and cached for all subsequent runs.
+
+---
+
+## Enhanced embeddings (recommended)
+
+The repository also includes a fine-tuning pipeline that significantly improves semantic search quality by training the embedding model on scholarly cross-references extracted from Ibn Kathir's tafsir.
+
+**Step 1 — Fine-tune the model:**
+
+```bash
+python -m src.train
+```
+
+Uses `data/training_pairs.json` (4,474 cross-reference pairs derived from Ibn Kathir) to fine-tune `all-MiniLM-L6-v2` with `MultipleNegativesRankingLoss`. Saves the model to `models/quran-finetuned/`. Takes ~7 minutes on Apple Silicon (MPS), longer on CPU.
+
+**Step 2 — Rebuild embeddings with the fine-tuned model and tafsir context:**
+
+```bash
+python -m src.embed --rebuild --with-tafsir
+python -m src.projection --rebuild
+```
+
+`embed.py` automatically detects and uses the fine-tuned model if it exists. `--with-tafsir` appends a scholarly excerpt from Ibn Kathir to each ayah's embedding text, giving the model richer thematic context.
+
+---
+
+## Rebuilding from scratch
+
+Re-download the translation:
 ```bash
 python -m src.fetch_quran
 ```
 
-This downloads from tanzil.net and writes `data/quran_en.json` (6,236 ayahs, validated).
-
-**Step 2 — Build the vector database:**
-
+Re-download Ibn Kathir tafsir from quran.com:
 ```bash
-python -m src.embed
+python -m src.fetch_tafsir
 ```
 
-Downloads `all-MiniLM-L6-v2` (~90 MB) and embeds all ayahs into a local ChromaDB collection using contextual chunking (each ayah is embedded together with its immediate neighbours for richer representation).
-
----
-
-## Run
-
+Re-extract cross-reference pairs from the tafsir:
 ```bash
-python -m src.app
+python -m src.extract_pairs
 ```
-
-The UMAP projection (`cache/umap_coords.npy`) is built the first time you open the Map tab and cached for all subsequent runs.
 
 ---
 
 ## Rebuild options
 
-Re-embed from scratch (e.g. after changing the window size in `embed.py`):
-
 ```bash
-python -m src.embed --rebuild
-```
-
-Recompute the UMAP projection (e.g. after re-embedding):
-
-```bash
-python -m src.projection --rebuild
+python -m src.embed --rebuild              # re-embed with current model
+python -m src.embed --rebuild --with-tafsir  # re-embed with tafsir context
+python -m src.projection --rebuild         # recompute UMAP from current embeddings
 ```
 
 ---
@@ -94,11 +116,18 @@ neighbours = find_similar(surah=2, ayah=255, k=10)
 ## Project layout
 
 ```
-├── data/quran_en.json        # Sahih International (built by fetch_quran)
+├── data/
+│   ├── quran_en.json         # Sahih International translation (6,236 ayahs)
+│   ├── tafsir_en.json        # Ibn Kathir (Abridged) English from quran.com
+│   └── training_pairs.json   # 4,474 cross-reference pairs for fine-tuning
 ├── db/                       # ChromaDB persistent store (gitignored)
-├── cache/umap_coords.npy     # UMAP projection cache (gitignored)
+├── cache/                    # UMAP projection cache (gitignored)
+├── models/                   # Fine-tuned model (gitignored)
 ├── src/
 │   ├── fetch_quran.py        # Download and parse the translation
+│   ├── fetch_tafsir.py       # Download Ibn Kathir tafsir from quran.com
+│   ├── extract_pairs.py      # Extract cross-reference pairs from tafsir
+│   ├── train.py              # Fine-tune the embedding model
 │   ├── embed.py              # Build the vector DB
 │   ├── search.py             # semantic_search / find_similar API
 │   ├── projection.py         # UMAP build and cache
@@ -119,10 +148,11 @@ python -m pytest tests/ -v
 
 ## Screenshot
 
-<!-- Add screenshot here once the application is running -->
+<!-- Add screenshot here -->
 
 ---
 
-## Translation source
+## Sources
 
-Sahih International translation via [tanzil.net](https://tanzil.net).
+- Translation: Sahih International via [tanzil.net](https://tanzil.net)
+- Tafsir: Ibn Kathir (Abridged) English via [quran.com](https://quran.com)
